@@ -24,7 +24,7 @@ struct rgb_color {
 XShmSegmentInfo shminfo;
 XImage *img;
 
-void init_shm(Display *d) {
+void init_shm(Display *d, int radius) {
 	if (img != NULL) {
 		XShmDetach(d, &shminfo);
 		XDestroyImage(img);
@@ -32,8 +32,8 @@ void init_shm(Display *d) {
 		shmctl(shminfo.shmid, IPC_RMID, 0);
 	}
 
-	long width = DisplayWidth(d,DefaultScreen(d));
-	long height = DisplayHeight(d,DefaultScreen(d));
+	long width = radius*2;
+	long height = radius*2;
 
 	img = XShmCreateImage( d, DefaultVisual(d, DefaultScreen(d)), DefaultDepth(d, DefaultScreen(d)),
 			ZPixmap, NULL, &shminfo, width, height );
@@ -47,8 +47,7 @@ void init_shm(Display *d) {
 }
 
 void get_pixel_color(Display *d, int x, int y, struct rgb_color *c, int radius) {
-	int success = XShmGetImage(d, RootWindow (d, DefaultScreen (d)), img, 0, 0, AllPlanes);
-	printf("XShmGetImage: %d\n", success);
+	int success = XShmGetImage(d, RootWindow (d, DefaultScreen (d)), img, x-(radius/2), y-(radius/2), AllPlanes);
 	XColor xc;
 	/* calculate average color */
 	long ix, iy;
@@ -56,8 +55,8 @@ void get_pixel_color(Display *d, int x, int y, struct rgb_color *c, int radius) 
 	unsigned long g = 0;
 	unsigned long b = 0;
 	int pixels = radius*radius;
-	for (ix=x-radius/2; ix<x+radius*2; ix++) {
-		for (iy=y-radius/2; iy<y+radius*2; iy++) {
+	for (ix=0; ix<radius*2; ix++) {
+		for (iy=0; iy<radius*2; iy++) {
 			xc.pixel = XGetPixel(img, ix, iy);
 			XQueryColor(d, DefaultColormap(d, DefaultScreen(d)), &xc);
 			r += xc.red/256;
@@ -97,7 +96,9 @@ int main(int argc, char *argv[]) {
 		printf("Unable to open usb device, proceeding anyway...\n");
 	}
 
-	init_shm(d);
+	int radius = 10;
+
+	init_shm(d, radius);
 
 	int x = -1;
 	int y = -1;
@@ -108,7 +109,7 @@ int main(int argc, char *argv[]) {
 	while(1) {
 		get_cursor_position(d, &x, &y);
 		if (x != old_x || y != old_y) {
-			get_pixel_color(d, x, y, &color, 1);
+			get_pixel_color(d, x, y, &color, radius);
 			printf("%d/%d\t(%d/%d/%d)\n", x, y, color.red, color.green, color.blue);
 			if (usb_present) {
 				uint8_t i;
