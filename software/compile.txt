@@ -1,0 +1,2 @@
+#Compile using:
+	gcc -opixeltrack pixeltrack.c hid.c -L/usr/X11R6/lib -lX11 -lusb
