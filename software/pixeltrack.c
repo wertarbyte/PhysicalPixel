@@ -10,6 +10,9 @@
 #include <X11/Xlib.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <sys/shm.h>
+#include <X11/extensions/XShm.h>
+#include <sys/ipc.h>
 #include "hid.h"
 
 struct rgb_color {
@@ -18,29 +21,53 @@ struct rgb_color {
 	uint8_t blue;
 };
 
+XShmSegmentInfo shminfo;
+XImage *img;
+
+void init_shm(Display *d) {
+	if (img != NULL) {
+		XShmDetach(d, &shminfo);
+		XDestroyImage(img);
+		shmdt(shminfo.shmaddr);
+		shmctl(shminfo.shmid, IPC_RMID, 0);
+	}
+
+	long width = DisplayWidth(d,DefaultScreen(d));
+	long height = DisplayHeight(d,DefaultScreen(d));
+
+	img = XShmCreateImage( d, DefaultVisual(d, DefaultScreen(d)), DefaultDepth(d, DefaultScreen(d)),
+			ZPixmap, NULL, &shminfo, width, height );
+	int imgsize = img->bytes_per_line * img->height;
+	shminfo.shmid = shmget( IPC_PRIVATE, imgsize, IPC_CREAT|0777 );
+	char* mem = (char*)shmat(shminfo.shmid, 0, 0);
+	shminfo.shmaddr = mem;
+	img->data = mem;
+	shminfo.readOnly = False;
+	XShmAttach(d, &shminfo);
+}
+
 void get_pixel_color(Display *d, int x, int y, struct rgb_color *c, int radius) {
-	XImage *img;
-	img = XGetImage(d, RootWindow (d, DefaultScreen (d)), x-radius, y-radius, 2*radius, 2*radius, AllPlanes, XYPixmap);
+	int success = XShmGetImage(d, RootWindow (d, DefaultScreen (d)), img, 0, 0, AllPlanes);
+	printf("XShmGetImage: %d\n", success);
 	XColor xc;
 	/* calculate average color */
-	uint8_t ix, iy;
-	double r = 0;
-	double g = 0;
-	double b = 0;
-	int pixels = (img->width*img->height);
-	for (ix=0; ix<img->width; ix++) {
-		for (iy=0; iy<img->height; iy++) {
+	long ix, iy;
+	unsigned long r = 0;
+	unsigned long g = 0;
+	unsigned long b = 0;
+	int pixels = radius*radius;
+	for (ix=x-radius/2; ix<x+radius*2; ix++) {
+		for (iy=y-radius/2; iy<y+radius*2; iy++) {
 			xc.pixel = XGetPixel(img, ix, iy);
 			XQueryColor(d, DefaultColormap(d, DefaultScreen(d)), &xc);
-			r += 1.0*xc.red/pixels;
-			g += 1.0*xc.green/pixels;
-			b += 1.0*xc.blue/pixels;
+			r += xc.red/256;
+			g += xc.green/256;
+			b += xc.blue/256;
 		}
 	}
-	c->red = (xc.red/256);
-	c->green = (xc.green/256);
-	c->blue = (xc.blue/256);
-	XFree(img);
+	c->red = (r/pixels);
+	c->green = (g/pixels);
+	c->blue = (b/pixels);
 }
 
 void get_cursor_position(Display *d, int *x, int *y) {
@@ -69,7 +96,9 @@ int main(int argc, char *argv[]) {
 	if (!usb_present) {
 		printf("Unable to open usb device, proceeding anyway...\n");
 	}
-	
+
+	init_shm(d);
+
 	int x = -1;
 	int y = -1;
 	int old_x = -1;
