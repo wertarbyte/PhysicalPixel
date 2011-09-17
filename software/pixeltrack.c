@@ -22,9 +22,9 @@ struct rgb_color {
 };
 
 XShmSegmentInfo shminfo;
-XImage *img;
+XImage *img = NULL;
 
-void init_shm(Display *d, int radius) {
+void init_shm(Display *d) {
 	if (img != NULL) {
 		XShmDetach(d, &shminfo);
 		XDestroyImage(img);
@@ -32,8 +32,8 @@ void init_shm(Display *d, int radius) {
 		shmctl(shminfo.shmid, IPC_RMID, 0);
 	}
 
-	long width = radius*2;
-	long height = radius*2;
+	long width = DisplayWidth(d, DefaultScreen(d));
+	long height = DisplayHeight(d, DefaultScreen(d));
 
 	img = XShmCreateImage( d, DefaultVisual(d, DefaultScreen(d)), DefaultDepth(d, DefaultScreen(d)),
 			ZPixmap, NULL, &shminfo, width, height );
@@ -46,22 +46,31 @@ void init_shm(Display *d, int radius) {
 	XShmAttach(d, &shminfo);
 }
 
+int refresh_image(Display *d) {
+	int ret =  XShmGetImage(d, RootWindow(d, DefaultScreen (d)), img, 0, 0, AllPlanes);
+	printf("Refreshing image: %d\n", ret);
+	return ret;
+}
+
 void get_pixel_color(Display *d, int x, int y, struct rgb_color *c, int radius) {
-	int success = XShmGetImage(d, RootWindow (d, DefaultScreen (d)), img, x-(radius/2), y-(radius/2), AllPlanes);
 	XColor xc;
+
 	/* calculate average color */
 	long ix, iy;
 	unsigned long r = 0;
 	unsigned long g = 0;
 	unsigned long b = 0;
-	int pixels = radius*radius;
-	for (ix=0; ix<(radius*2)-1; ix++) {
-		for (iy=0; iy<(radius*2)-1; iy++) {
+	int pixels = 0;
+	for (ix=(x-(radius/2)); ix<x+(radius/2)+1; ix++) {
+		if (ix<0 || ix>img->width) continue;
+		for (iy=y-(radius/2); iy<y+(radius/2)+1; iy++) {
+			if (iy<0 || iy>img->height) continue;
 			xc.pixel = XGetPixel(img, ix, iy);
 			XQueryColor(d, DefaultColormap(d, DefaultScreen(d)), &xc);
 			r += xc.red/256;
 			g += xc.green/256;
 			b += xc.blue/256;
+			pixels++;
 		}
 	}
 	c->red = (r/pixels);
@@ -96,9 +105,10 @@ int main(int argc, char *argv[]) {
 		printf("Unable to open usb device, proceeding anyway...\n");
 	}
 
-	int radius = 10;
+	int radius = 16;
 
-	init_shm(d, radius);
+	init_shm(d);
+	refresh_image(d);
 
 	int x = -1;
 	int y = -1;
