@@ -55,8 +55,8 @@ void get_pixel_color(Display *d, int x, int y, struct rgb_color *c, int radius) 
 	unsigned long g = 0;
 	unsigned long b = 0;
 	int pixels = radius*radius;
-	for (ix=0; ix<radius*2; ix++) {
-		for (iy=0; iy<radius*2; iy++) {
+	for (ix=0; ix<(radius*2)-1; ix++) {
+		for (iy=0; iy<(radius*2)-1; iy++) {
 			xc.pixel = XGetPixel(img, ix, iy);
 			XQueryColor(d, DefaultColormap(d, DefaultScreen(d)), &xc);
 			r += xc.red/256;
