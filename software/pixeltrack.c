@@ -12,6 +12,7 @@
 #include <stdint.h>
 #include <sys/shm.h>
 #include <X11/extensions/XShm.h>
+#include <X11/extensions/XInput2.h>
 #include <sys/ipc.h>
 #include "hid.h"
 
@@ -44,6 +45,16 @@ void init_shm(Display *d, int radius) {
 	img->data = mem;
 	shminfo.readOnly = False;
 	XShmAttach(d, &shminfo);
+}
+
+void init_xinput(Display *d) {
+	XIEventMask eventmask;
+	unsigned char mask[1] = {0};
+	eventmask.deviceid = XIAllDevices;
+	eventmask.mask_len = sizeof(mask);
+	eventmask.mask = mask;
+	XISetMask(mask, XI_Motion);
+	XISelectEvents(d, RootWindow(d, DefaultScreen (d)), &eventmask, 1);
 }
 
 int refresh_image(Display *d, int x, int y, int radius) {
@@ -107,6 +118,20 @@ void get_cursor_position(Display *d, int *x, int *y) {
 			&mask_return);
 }
 
+void wait_for_movement(Display *d, int *x, int *y) {
+	XEvent ev;
+	XGenericEventCookie *cookie = &ev.xcookie;
+	XNextEvent(d, &ev);
+	if (XGetEventData(d, cookie)) {
+		switch(cookie->evtype) {
+			case XI_Motion:
+				get_cursor_position(d, x, y);
+				break;
+		}
+	}
+	XFreeEventData(d, cookie);
+}
+
 int main(int argc, char *argv[]) {
 	Display *d = XOpenDisplay(NULL);
 	if (!d) {
@@ -121,6 +146,7 @@ int main(int argc, char *argv[]) {
 	int radius = 16;
 
 	init_shm(d, radius);
+	init_xinput(d);
 
 	int x = -1;
 	int y = -1;
@@ -129,7 +155,7 @@ int main(int argc, char *argv[]) {
 	struct rgb_color color;
 	uint8_t buf[64];
 	while(1) {
-		get_cursor_position(d, &x, &y);
+		wait_for_movement(d, &x, &y);
 		if (x != old_x || y != old_y) {
 			refresh_image(d, x, y, radius);
 			get_pixel_color(d, x, y, &color, radius);
