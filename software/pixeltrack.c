@@ -24,7 +24,7 @@ struct rgb_color {
 XShmSegmentInfo shminfo;
 XImage *img = NULL;
 
-void init_shm(Display *d) {
+void init_shm(Display *d, int radius) {
 	if (img != NULL) {
 		XShmDetach(d, &shminfo);
 		XDestroyImage(img);
@@ -32,8 +32,8 @@ void init_shm(Display *d) {
 		shmctl(shminfo.shmid, IPC_RMID, 0);
 	}
 
-	long width = DisplayWidth(d, DefaultScreen(d));
-	long height = DisplayHeight(d, DefaultScreen(d));
+	long width = 2*radius; //DisplayWidth(d, DefaultScreen(d));
+	long height = 2*radius; //DisplayHeight(d, DefaultScreen(d));
 
 	img = XShmCreateImage( d, DefaultVisual(d, DefaultScreen(d)), DefaultDepth(d, DefaultScreen(d)),
 			ZPixmap, NULL, &shminfo, width, height );
@@ -46,13 +46,18 @@ void init_shm(Display *d) {
 	XShmAttach(d, &shminfo);
 }
 
-int refresh_image(Display *d) {
-	int ret =  XShmGetImage(d, RootWindow(d, DefaultScreen (d)), img, 0, 0, AllPlanes);
-	printf("Refreshing image: %d\n", ret);
+int refresh_image(Display *d, int x, int y, int radius) {
+	int ret =  XShmGetImage(d, RootWindow(d, DefaultScreen (d)), img, x-(radius/2), y-(radius/2), AllPlanes);
 	return ret;
 }
 
 void get_pixel_color(Display *d, int x, int y, struct rgb_color *c, int radius) {
+	/* Cache color lookups */
+#define CACHE_SIZE 16384
+	static unsigned long pixels[CACHE_SIZE] = {0};
+	static XColor colors[CACHE_SIZE] = {0};
+	static uint8_t cached[CACHE_SIZE] = {0};
+
 	XColor xc;
 
 	/* calculate average color */
@@ -60,22 +65,30 @@ void get_pixel_color(Display *d, int x, int y, struct rgb_color *c, int radius) 
 	unsigned long r = 0;
 	unsigned long g = 0;
 	unsigned long b = 0;
-	int pixels = 0;
-	for (ix=(x-(radius/2)); ix<x+(radius/2)+1; ix++) {
+	int n_pixels = 0;
+	for (ix=0; ix<(radius*2)-1; ix++) {
 		if (ix<0 || ix>img->width) continue;
-		for (iy=y-(radius/2); iy<y+(radius/2)+1; iy++) {
+		for (iy=0; iy<(radius*2)+1; iy++) {
 			if (iy<0 || iy>img->height) continue;
-			xc.pixel = XGetPixel(img, ix, iy);
-			XQueryColor(d, DefaultColormap(d, DefaultScreen(d)), &xc);
+			unsigned long p = XGetPixel(img, ix, iy);
+			if (cached[p%CACHE_SIZE] && pixels[p%CACHE_SIZE] == p) {
+				xc = colors[p%CACHE_SIZE];
+			} else {
+				xc.pixel = p;
+				XQueryColor(d, DefaultColormap(d, DefaultScreen(d)), &xc);
+				pixels[p%CACHE_SIZE] = p;
+				colors[p%CACHE_SIZE] = xc;
+				cached[p%CACHE_SIZE] = 1;
+			}
 			r += xc.red/256;
 			g += xc.green/256;
 			b += xc.blue/256;
-			pixels++;
+			n_pixels++;
 		}
 	}
-	c->red = (r/pixels);
-	c->green = (g/pixels);
-	c->blue = (b/pixels);
+	c->red = (r/n_pixels);
+	c->green = (g/n_pixels);
+	c->blue = (b/n_pixels);
 }
 
 void get_cursor_position(Display *d, int *x, int *y) {
@@ -107,8 +120,7 @@ int main(int argc, char *argv[]) {
 
 	int radius = 16;
 
-	init_shm(d);
-	refresh_image(d);
+	init_shm(d, radius);
 
 	int x = -1;
 	int y = -1;
@@ -119,6 +131,7 @@ int main(int argc, char *argv[]) {
 	while(1) {
 		get_cursor_position(d, &x, &y);
 		if (x != old_x || y != old_y) {
+			refresh_image(d, x, y, radius);
 			get_pixel_color(d, x, y, &color, radius);
 			printf("%d/%d\t(%d/%d/%d)\n", x, y, color.red, color.green, color.blue);
 			if (usb_present) {
