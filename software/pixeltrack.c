@@ -14,7 +14,10 @@
 #include <X11/extensions/XShm.h>
 #include <X11/extensions/XInput2.h>
 #include <sys/ipc.h>
+
+#ifdef USB_PIXEL
 #include "hid.h"
+#endif
 
 /* capture that many pixels _around_ the cursor position;
  * the pixel below the cursor will be captured anyway, so
@@ -145,11 +148,12 @@ int main(int argc, char *argv[]) {
 		printf("Unable to open display\n");
 		return;
 	}
+#ifdef USB_PIXEL
 	int usb_present = rawhid_open(1, 0x16C0, 0x0480, -1, -1);
 	if (!usb_present) {
 		printf("Unable to open usb device, proceeding anyway...\n");
 	}
-
+#endif
 	int radius = RADIUS;
 
 	init_shm(d, radius);
@@ -167,6 +171,7 @@ int main(int argc, char *argv[]) {
 			refresh_image(d, x, y, radius);
 			get_pixel_color(d, x, y, &color, radius);
 			printf("%d/%d\t(%d/%d/%d)\n", x, y, color.red, color.green, color.blue);
+#ifdef USB_PIXEL
 			if (usb_present) {
 				uint8_t i;
 				for (i=0; i<64; i++) {
@@ -177,6 +182,7 @@ int main(int argc, char *argv[]) {
 				buf[2] = color.blue;
 				rawhid_send(0, buf, 64, 100);
 			}
+#endif
 			old_x = x;
 			old_y = y;
 		}

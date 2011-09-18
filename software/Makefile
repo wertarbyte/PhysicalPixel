@@ -1,5 +1,5 @@
 pixeltrack: hid.c pixeltrack.c
-	$(CC) -o $@ $^ -lX11 -lusb -lXi
+	$(CC) -DUSB_PIXEL -o $@ $^ -lX11 -lusb -lXi
 
 clean:
 	rm pixeltrack
