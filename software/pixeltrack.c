@@ -26,10 +26,11 @@
  */
 #define RADIUS 5
 
+/* ordered that way due to strange byte order in XImage */
 struct rgb_color {
-	uint8_t red;
-	uint8_t green;
 	uint8_t blue;
+	uint8_t green;
+	uint8_t red;
 	uint8_t alpha;
 };
 
