@@ -16,6 +16,13 @@
 #include <sys/ipc.h>
 #include "hid.h"
 
+/* capture that many pixels _around_ the cursor position;
+ * the pixel below the cursor will be captured anyway, so
+ * the captured area will be (2*RADIUS+1)^2; a setting of 0
+ * will just capture the single pixel and no surroundings
+ */
+#define RADIUS 5
+
 struct rgb_color {
 	uint8_t red;
 	uint8_t green;
@@ -33,8 +40,8 @@ void init_shm(Display *d, int radius) {
 		shmctl(shminfo.shmid, IPC_RMID, 0);
 	}
 
-	long width = 2*radius; //DisplayWidth(d, DefaultScreen(d));
-	long height = 2*radius; //DisplayHeight(d, DefaultScreen(d));
+	long width = (2*radius+1);
+	long height = (2*radius+1);
 
 	img = XShmCreateImage( d, DefaultVisual(d, DefaultScreen(d)), DefaultDepth(d, DefaultScreen(d)),
 			ZPixmap, NULL, &shminfo, width, height );
@@ -57,8 +64,13 @@ void init_xinput(Display *d) {
 	XISelectEvents(d, RootWindow(d, DefaultScreen (d)), &eventmask, 1);
 }
 
+#define MAX(x, y) ((x)>(y) ? (x) : (y))
+#define MIN(x, y) ((x)<(y) ? (x) : (y))
+#define BETWEEN(l, u, v) MIN( (MAX((l), (v))), (u))
 int refresh_image(Display *d, int x, int y, int radius) {
-	int ret =  XShmGetImage(d, RootWindow(d, DefaultScreen (d)), img, x-(radius/2), y-(radius/2), AllPlanes);
+	int w = DisplayWidth(d, DefaultScreen(d));
+	int h = DisplayHeight(d, DefaultScreen(d));
+	int ret =  XShmGetImage(d, RootWindow(d, DefaultScreen (d)), img, BETWEEN(radius, w-1-2*radius, x), BETWEEN(radius, h-1-2*radius, y), AllPlanes);
 	return ret;
 }
 
@@ -77,10 +89,8 @@ void get_pixel_color(Display *d, int x, int y, struct rgb_color *c, int radius) 
 	unsigned long g = 0;
 	unsigned long b = 0;
 	int n_pixels = 0;
-	for (ix=0; ix<(radius*2)-1; ix++) {
-		if (ix<0 || ix>img->width) continue;
-		for (iy=0; iy<(radius*2)+1; iy++) {
-			if (iy<0 || iy>img->height) continue;
+	for (ix=0; ix < img->width; ix++) {
+		for (iy=0; iy < img->height; iy++) {
 			unsigned long p = XGetPixel(img, ix, iy);
 			if (cached[p%CACHE_SIZE] && pixels[p%CACHE_SIZE] == p) {
 				xc = colors[p%CACHE_SIZE];
@@ -143,7 +153,7 @@ int main(int argc, char *argv[]) {
 		printf("Unable to open usb device, proceeding anyway...\n");
 	}
 
-	int radius = 16;
+	int radius = RADIUS;
 
 	init_shm(d, radius);
 	init_xinput(d);
@@ -173,7 +183,6 @@ int main(int argc, char *argv[]) {
 			old_x = x;
 			old_y = y;
 		}
-		usleep(100);
 	}
 	XCloseDisplay(d);
 }
