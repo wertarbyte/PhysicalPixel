@@ -1,0 +1,11 @@
+software/pixeltrack
+firmware/*.hex
+firmware/.dep
+firmware/*.eep
+firmware/*.elf
+firmware/*.lss
+firmware/*.lst
+firmware/*.map
+firmware/*.o
+firmware/*.sym
+
