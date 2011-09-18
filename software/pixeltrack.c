@@ -31,6 +31,10 @@ struct rgb_color {
 
 XShmSegmentInfo shminfo;
 XImage *img = NULL;
+struct {
+	int x;
+	int y;
+} img_offset;
 
 void init_shm(Display *d, int radius) {
 	if (img != NULL) {
@@ -68,9 +72,13 @@ void init_xinput(Display *d) {
 #define MIN(x, y) ((x)<(y) ? (x) : (y))
 #define BETWEEN(l, u, v) MIN( (MAX((l), (v))), (u))
 int refresh_image(Display *d, int x, int y, int radius) {
+	/* if we are near the border, we capture more than just the area around the cursor */
 	int w = DisplayWidth(d, DefaultScreen(d));
 	int h = DisplayHeight(d, DefaultScreen(d));
-	int ret =  XShmGetImage(d, RootWindow(d, DefaultScreen (d)), img, BETWEEN(radius, w-1-2*radius, x), BETWEEN(radius, h-1-2*radius, y), AllPlanes);
+	img_offset.x = BETWEEN(radius, w-1-2*radius, x);
+	img_offset.y = BETWEEN(radius, h-1-2*radius, y);
+
+	int ret =  XShmGetImage(d, RootWindow(d, DefaultScreen (d)), img, img_offset.x, img_offset.y, AllPlanes);
 	return ret;
 }
 
@@ -90,7 +98,9 @@ void get_pixel_color(Display *d, int x, int y, struct rgb_color *c, int radius) 
 	unsigned long b = 0;
 	int n_pixels = 0;
 	for (ix=0; ix < img->width; ix++) {
+		if (ix+img_offset.x < x-radius || ix+img_offset.x > x+radius) continue;
 		for (iy=0; iy < img->height; iy++) {
+			if (iy+img_offset.y < y-radius || iy+img_offset.y > y+radius) continue;
 			unsigned long p = XGetPixel(img, ix, iy);
 			if (cached[p%CACHE_SIZE] && pixels[p%CACHE_SIZE] == p) {
 				xc = colors[p%CACHE_SIZE];
