@@ -122,34 +122,21 @@ void get_pixel_color(Display *d, int x, int y, struct rgb_color *c, int radius) 
 	c->blue = (b/n_pixels);
 }
 
-void get_cursor_position(Display *d, int *x, int *y) {
-	int screen = DefaultScreen(d);
-	Window rootwindow = RootWindow(d, screen);
-
-	Window root_return;
-	Window child_return;
-	int win_x_return;
-	int win_y_return;
-	unsigned int mask_return;
-
-	XQueryPointer(d, rootwindow, &root_return, &child_return,
-			x, y,
-			&win_x_return, &win_y_return,
-			&mask_return);
-}
-
 void wait_for_movement(Display *d, int *x, int *y) {
 	XEvent ev;
 	XGenericEventCookie *cookie = &ev.xcookie;
 	XNextEvent(d, &ev);
 	if (XGetEventData(d, cookie)) {
+		XIDeviceEvent *xd;
 		switch(cookie->evtype) {
 			case XI_Motion:
-				get_cursor_position(d, x, y);
+				xd = cookie->data;
+				*x = xd->root_x;
+				*y = xd->root_y;
 				break;
 		}
+		XFreeEventData(d, cookie);
 	}
-	XFreeEventData(d, cookie);
 }
 
 int main(int argc, char *argv[]) {
