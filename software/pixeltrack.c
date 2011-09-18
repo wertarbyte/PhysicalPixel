@@ -30,6 +30,7 @@ struct rgb_color {
 	uint8_t red;
 	uint8_t green;
 	uint8_t blue;
+	uint8_t alpha;
 };
 
 XShmSegmentInfo shminfo;
@@ -86,6 +87,7 @@ int refresh_image(Display *d, int x, int y, int radius) {
 }
 
 void get_pixel_color(Display *d, int x, int y, struct rgb_color *c, int radius) {
+#if USE_XQUERYCOLOR
 	/* Cache color lookups */
 #define CACHE_SIZE 16384
 	static unsigned long pixels[CACHE_SIZE] = {0};
@@ -93,7 +95,10 @@ void get_pixel_color(Display *d, int x, int y, struct rgb_color *c, int radius) 
 	static uint8_t cached[CACHE_SIZE] = {0};
 
 	XColor xc;
-
+#else
+	/* we blindly assume that we have an array of rgb structs */
+	struct rgb_color *pic = (struct rgb_color *)img->data;
+#endif
 	/* calculate average color */
 	long ix, iy;
 	unsigned long r = 0;
@@ -104,6 +109,7 @@ void get_pixel_color(Display *d, int x, int y, struct rgb_color *c, int radius) 
 		if (ix+img_offset.x < x-radius || ix+img_offset.x > x+radius) continue;
 		for (iy=0; iy < img->height; iy++) {
 			if (iy+img_offset.y < y-radius || iy+img_offset.y > y+radius) continue;
+#if USE_XQUERYCOLOR
 			unsigned long p = XGetPixel(img, ix, iy);
 			if (cached[p%CACHE_SIZE] && pixels[p%CACHE_SIZE] == p) {
 				xc = colors[p%CACHE_SIZE];
@@ -114,9 +120,15 @@ void get_pixel_color(Display *d, int x, int y, struct rgb_color *c, int radius) 
 				colors[p%CACHE_SIZE] = xc;
 				cached[p%CACHE_SIZE] = 1;
 			}
-			r += xc.red/256;
-			g += xc.green/256;
-			b += xc.blue/256;
+			r += xc.red>>8;
+			g += xc.green>>8;
+			b += xc.blue>>8;
+#else
+			struct rgb_color *pixel = &pic[ix+iy*img->width];
+			r += pixel->red;
+			g += pixel->green;
+			b += pixel->blue;
+#endif
 			n_pixels++;
 		}
 	}
@@ -164,6 +176,7 @@ int main(int argc, char *argv[]) {
 	int old_x = -1;
 	int old_y = -1;
 	struct rgb_color color;
+	color.alpha = 255;
 	uint8_t buf[64];
 	while(1) {
 		wait_for_movement(d, &x, &y);
