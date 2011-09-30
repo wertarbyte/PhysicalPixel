@@ -1,4 +1,4 @@
-pixeltrack: hid.c pixeltrack.c
+pixeltrack: pixeltrack.c
 	$(CC) -DUSB_PIXEL -o $@ $^ -lX11 -lusb -lXi
 
 clean:

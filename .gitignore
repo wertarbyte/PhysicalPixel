@@ -8,4 +8,4 @@ firmware/*.lst
 firmware/*.map
 firmware/*.o
 firmware/*.sym
-
+firmware/usbdrv/*.o

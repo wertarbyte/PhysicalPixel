@@ -16,7 +16,9 @@
 #include <sys/ipc.h>
 
 #ifdef USB_PIXEL
-#include "hid.h"
+#include <usb.h>
+#include "../firmware/requests.h"
+#include "../firmware/usbconfig.h"
 #endif
 
 /* capture that many pixels _around_ the cursor position;
@@ -73,15 +75,15 @@ void init_xinput(Display *d) {
 	XISelectEvents(d, RootWindow(d, DefaultScreen (d)), &eventmask, 1);
 }
 
-#define MAX(x, y) ((x)>(y) ? (x) : (y))
-#define MIN(x, y) ((x)<(y) ? (x) : (y))
-#define BETWEEN(l, u, v) MIN( (MAX((l), (v))), (u))
+#define VAL_MAX(x, y) ((x)>(y) ? (x) : (y))
+#define VAL_MIN(x, y) ((x)<(y) ? (x) : (y))
+#define VAL_BETWEEN(l, u, v) VAL_MIN( (VAL_MAX((l), (v))), (u))
 int refresh_image(Display *d, int x, int y, int radius) {
 	/* if we are near the border, we capture more than just the area around the cursor */
 	int w = DisplayWidth(d, DefaultScreen(d));
 	int h = DisplayHeight(d, DefaultScreen(d));
-	img_offset.x = BETWEEN(radius, w-1-2*radius, x);
-	img_offset.y = BETWEEN(radius, h-1-2*radius, y);
+	img_offset.x = VAL_BETWEEN(radius, w-1-2*radius, x);
+	img_offset.y = VAL_BETWEEN(radius, h-1-2*radius, y);
 
 	int ret =  XShmGetImage(d, RootWindow(d, DefaultScreen (d)), img, img_offset.x, img_offset.y, AllPlanes);
 	return ret;
@@ -155,6 +157,33 @@ void wait_for_movement(Display *d, int *x, int *y) {
 	}
 }
 
+uint8_t open_usb(usb_dev_handle **handle) {
+	uint16_t vid = 0x16c0;
+	uint16_t pid = 0x05df;
+	struct usb_bus *bus;
+	struct usb_device *dev;
+	usb_dev_handle *target = NULL;
+
+	usb_init();
+	usb_find_busses();
+	usb_find_devices();
+	for (bus=usb_get_busses(); bus; bus=bus->next) {
+		for (dev=bus->devices; dev; dev=dev->next) {
+			if (dev->descriptor.idVendor == vid && dev->descriptor.idProduct == pid) {
+				target = usb_open(dev);
+			}
+		}
+	}
+	//return (usbOpenDevice(&handle, vid, vendor, pid, product, NULL, NULL, NULL) != 0);
+	//return (usbOpenDevice(&handle, 0x16c0, NULL, 0x05df, NULL) != 0);
+	if (target != NULL) {
+		*handle = target;
+		return 1;
+	} else {
+		return 0;
+	}
+}
+
 int main(int argc, char *argv[]) {
 	Display *d = XOpenDisplay(NULL);
 	if (!d) {
@@ -162,8 +191,10 @@ int main(int argc, char *argv[]) {
 		return;
 	}
 #ifdef USB_PIXEL
-	int usb_present = rawhid_open(1, 0x16C0, 0x0480, -1, -1);
-	if (!usb_present) {
+	usb_dev_handle *handle = NULL;
+
+	int usb_present = open_usb(&handle);
+	if (!handle) {
 		printf("Unable to open usb device, proceeding anyway...\n");
 	}
 #endif
@@ -178,7 +209,7 @@ int main(int argc, char *argv[]) {
 	int old_y = -1;
 	struct rgb_color color;
 	color.alpha = 255;
-	uint8_t buf[64];
+	uint8_t buf[3];
 	while(1) {
 		wait_for_movement(d, &x, &y);
 		if (x != old_x || y != old_y) {
@@ -187,14 +218,15 @@ int main(int argc, char *argv[]) {
 			printf("%d/%d\t(%d/%d/%d)\n", x, y, color.red, color.green, color.blue);
 #ifdef USB_PIXEL
 			if (usb_present) {
-				uint8_t i;
-				for (i=0; i<64; i++) {
-					buf[i] = 0;
-				}
 				buf[0] = color.red;
 				buf[1] = color.green;
 				buf[2] = color.blue;
-				rawhid_send(0, buf, 64, 100);
+				int8_t sent = usb_control_msg(handle, USB_TYPE_VENDOR | USB_RECIP_DEVICE | USB_ENDPOINT_OUT, CUSTOM_RQ_SET_RGB, 0, 0, buf, 3, 100);
+				if (sent < 0) {
+					printf("Lost contact to USB device\n");
+					usb_present = 0;
+					handle = NULL;
+				}
 			}
 #endif
 			old_x = x;
